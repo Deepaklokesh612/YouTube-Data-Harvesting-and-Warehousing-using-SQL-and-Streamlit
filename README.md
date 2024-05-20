@@ -50,7 +50,7 @@ Required Python Libraries:
 
 The following Python libraries are required for the project:
 
-1.google-api-python-client: For interacting with the YouTube API.
+1. google-api-python-client: For interacting with the YouTube API.
 2. pandas: For data manipulation and analysis.  
 3. mysql-connector-python: For connecting to MySQL database.  
 4. Streamlit: For building the user interface and web application.   
