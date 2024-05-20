@@ -3,12 +3,12 @@ import pandas as pd
 import streamlit as st
 from streamlit_option_menu import option_menu
 import mysql.connector
-from googleapiclient.discovery import build
 import datetime
+import re
 
-#API key connection
+# API key connection
 def Api_connect():
-    Api_Id="AIzaSyCHLzEJsRtYPevDdUcbmQoqtMkG2FakUH0"
+    Api_Id="AIzaSyAzt9l1S6CLyrc_lKanxnJaoq-lS60J-sI"
     api_service_name="youtube"
     api_version="v3"
     youtube=build(api_service_name,api_version,developerKey=Api_Id)
@@ -65,7 +65,7 @@ def create_tables(conn):
                 Thumbnail VARCHAR(255),
                 Description TEXT,
                 Published_Date DATETIME,
-                Duration interval,
+                Duration TIME,
                 Views BIGINT,
                 Likes BIGINT,
                 Comments BIGINT,
@@ -122,11 +122,21 @@ def insert_data(conn, table_name, data):
                     item["Channel_Name"], published_at, item["Video_Count"]
                 ))
         elif table_name == "video_details":
+            def parse_duration(duration):
+                 match = re.match(r'^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$', duration)
+                 if not match:
+                    return None             
+                 hours, minutes, seconds = match.groups()
+                 hours = int(hours) if hours else 0
+                 minutes = int(minutes) if minutes else 0
+                 seconds = int(seconds) if seconds else 0       
+                 return f"{hours:02}:{minutes:02}:{seconds:02}"  
             for item in data:
                 tags = ', '.join(item["Tags"]) if item["Tags"] else None
                 if tags and len(tags) > 65535:
                     tags = tags[:65535]  # Truncate if too long
                 published_date = datetime.datetime.strptime(item["Published_Date"], "%Y-%m-%dT%H:%M:%SZ")
+                duration = parse_duration(item["Duration"])
                 cursor.execute("""
                     INSERT INTO video_details (
                         Channel_Name, Channel_Id, Video_Id, Title, Tags, Thumbnail,
@@ -143,9 +153,9 @@ def insert_data(conn, table_name, data):
                 """, (
                     item["Channel_Name"], item["Channel_Id"], item["Video_Id"], item["Title"],
                     tags, item["Thumbnail"], item["Description"], published_date,
-                    item["Duration"], item["Views"], item["Likes"], item["Comments"],
+                    duration, item["Views"], item["Likes"], item["Comments"],
                     item["Favorite_Count"], item["Definition"], item["Caption_Status"]
-                ))
+                ))  
         elif table_name == "comment_details":
             for item in data:
                 comment_published = datetime.datetime.strptime(item["Comment_Published"], "%Y-%m-%dT%H:%M:%SZ")
@@ -173,10 +183,8 @@ def get_channel_info(channel_id):
             id=channel_id
         )
         response = request.execute()
-
         if 'items' not in response or not response['items']:
             raise ValueError("No channel information found for the given channel ID")
-
         for i in response['items']:
             data = {
                 "Channel_Name": i["snippet"]["title"],
@@ -197,9 +205,7 @@ def get_videos_ids(channel_id):
     video_ids = []
     response = youtube.channels().list(id=channel_id, part='contentDetails').execute()
     Playlist_Id = response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
-
     next_page_token = None
-
     while True:
         response1 = youtube.playlistItems().list(
             part='snippet',
@@ -210,7 +216,6 @@ def get_videos_ids(channel_id):
         for i in range(len(response1['items'])):
             video_ids.append(response1['items'][i]['snippet']['resourceId']['videoId'])
         next_page_token = response1.get('nextPageToken')
-
         if next_page_token is None:
             break
     return video_ids
@@ -271,26 +276,32 @@ def get_comment_info(video_ids):
     comment_data = []
     try:
         for video_id in video_ids:
-            request = youtube.commentThreads().list(
-                part="snippet",
-                videoId=video_id,
-                maxResults=100
-            )
-            response = request.execute()            
-            if 'items' not in response:
-                # Comments are disabled for this video, so skip it
-                print(f"Comments are disabled for video with ID: {video_id}")
-                continue            
-            for item in response["items"]:
-                comment = item["snippet"]["topLevelComment"]
-                data = {
-                    "Comment_Id": comment["id"],
-                    "Video_Id": video_id,
-                    "Comment_Text": comment["snippet"]["textDisplay"],
-                    "Comment_Author": comment["snippet"]["authorDisplayName"],
-                    "Comment_Published": comment["snippet"]["publishedAt"]
-                }
-                comment_data.append(data)
+            next_page_token = None
+            while True:
+                request = youtube.commentThreads().list(
+                    part="snippet",
+                    videoId=video_id,
+                    maxResults=100,
+                    pageToken=next_page_token
+                )
+                response = request.execute()              
+                if 'items' not in response:
+                    # Comments are disabled for this video, so skip it
+                    print(f"Comments are disabled for video with ID: {video_id}")
+                    break                
+                for item in response["items"]:
+                    comment = item["snippet"]["topLevelComment"]
+                    data = {
+                        "Comment_Id": comment["id"],
+                        "Video_Id": video_id,
+                        "Comment_Text": comment["snippet"]["textDisplay"],
+                        "Comment_Author": comment["snippet"]["authorDisplayName"],
+                        "Comment_Published": comment["snippet"]["publishedAt"]
+                    }
+                    comment_data.append(data)               
+                next_page_token = response.get('nextPageToken')
+                if not next_page_token:
+                    break
     except Exception as e:
         print(f"An error occurred: {e}")
     return comment_data
@@ -305,7 +316,6 @@ def channel_details(channel_id):
         vi_ids = get_videos_ids(channel_id)
         vi_details = get_video_info(vi_ids)
         com_details = get_comment_info(vi_ids)
-
         if ch_details:
             insert_data(conn, "channel_details", ch_details)
         if pl_details:
@@ -356,7 +366,6 @@ def show_playlists_table(conn):
     except Exception as e:
         st.write(f"Error fetching data from playlist_details table: {e}")
         return None
-
 
 def show_videos_table(conn):
     try:
@@ -445,34 +454,25 @@ def display_channel_details(channel_details):
     st.write(f"**Subscribers Count:** {channel_details.get('Subscribers', 'N/A')}")
     st.write(f"**Total Videos:** {channel_details.get('Total_Videos', 'N/A')}")
 
-# Main content
-# setting up streamlit page and adding name to it
-from PIL import Image
-
-st.set_page_config(page_title='YouTube Data Harvesting and Warehousing',
-                    layout='wide',
-                    initial_sidebar_state='expanded',
-                    menu_items={'About': '''This streamlit application was developed by M.Gokul.
-                                Contact e-mail: gokulgokul6847@gmail.com'''})
-
 # setting up streamlit sidebar menu with options
 with st.sidebar:
+    st.image("D:\Downloads\Color-YouTube-logo.jpg", use_column_width=True)
     selected = option_menu("Main Menu",
-                           ["Home", "Data collection and upload", "MYSQL Database", "Analysis using SQL", "Data Visualization"],
+                           ["Home", "Data collection and upload", "MYSQL Database", "Analysis using SQL"],
                            icons=["house", "cloud-upload", "database", "filetype-sql", "bar-chart-line"],
                            menu_icon="menu-up",
                            orientation="vertical")
 
 # Setting up the option "Home" in streamlit page
 if selected == "Home":
-    st.title(':blue[You Tube Data Harvesting & Warehousing using SQL]')
-    st.subheader(':red[Overview :]')
+    st.title(':red[You Tube Data Harvesting & Warehousing using SQL]')
+    st.subheader(':blue[Overview :]')
     st.markdown('''Build a simple dashboard or UI using Streamlit and 
                 retrieve YouTube channel data with the help of the YouTube API.
                 Stored the data in an SQL database (warehousing) managed by XAMPP control panel,
                 enabling querying of the data using SQL. Visualize the data within the Streamlit app to uncover insights,
                 trends with the YouTube channel data''')
-    st.subheader(':red[Skill Take Away :]')
+    st.subheader(':blue[Skill Take Away :]')
     st.markdown(''' 
     * Python scripting
     * Data Collection
@@ -481,28 +481,36 @@ if selected == "Home":
     * Streamlit
     ''')
 
-# Main content based on selected menu option
+# Data collection and upload on menu option
 if selected == "Data collection and upload":
-    channel_id = st.text_input("Enter the channel ID")
-    
+    st.subheader(':blue[Data collection and upload]')
+    st.markdown('''
+                - Provide channel ID in the input field.
+                - Clicking the 'Show Channel Details' button will display an overview of youtube channel.
+                - Clicking 'Collecting and Store Data' will store the extracted channel information,
+                Playlists,Videos,Comments in MYSQL Database''')
+    st.markdown('''
+                :red[note:] ***you can get the channel ID :***
+                open youtube - go to any channel - go to about - share cahnnel - copy the channel ID''')    
+    channel_id = st.text_input("**Enter the channel ID**")    
     if st.button("Show Channel Details"):
         channel_details = get_channel_info(channel_id)
         if channel_details:
             display_channel_details(channel_details)
         else:
             st.error("Failed to fetch channel details")
-
-    if st.button("Collect and store data"):
-        conn = connect_mysql()
-        if conn:
-            if check_channel_exists(conn, channel_id):
-                st.success("Channel details for the given channel ID already exist")
+    if st.button("Collect and Store Data"):
+        with st.spinner('Upload in progress...'):            
+            conn = connect_mysql()
+            if conn:
+                if check_channel_exists(conn, channel_id):
+                    st.success("Channel details for the given channel ID already exist")
+                else:
+                    result = channel_details(channel_id)  # This function will insert all channel details
+                    st.success(result)
+                    conn.close()
             else:
-                result = channel_details(channel_id)  # This function will insert all channel details
-                st.success(result)
-                conn.close()
-        else:
-            st.error("Failed to connect to MySQL database")
+                st.error("Failed to connect to MySQL database")
 
 # Function to retrieve all channel names from MySQL
 def get_all_channels(conn):
@@ -515,15 +523,13 @@ def get_all_channels(conn):
         print(f"Error retrieving channels: {e}")
         return []
 
-# Main content
+# To show selected table
 if selected == "MYSQL Database":
     conn = connect_mysql()
     if conn:
         all_channels = get_all_channels(conn)
         unique_channel = st.selectbox("List of collected and stored Channels", all_channels)
-
-        show_table = st.radio("Select the TABLE to view", ("CHANNELS", "PLAYLISTS", "VIDEOS", "COMMENTS"))
-
+        show_table = st.radio("**Select the TABLE to view**", ("CHANNELS", "PLAYLISTS", "VIDEOS", "COMMENTS"))
         if show_table == "CHANNELS":
             show_channels_table(conn)
         elif show_table == "PLAYLISTS":
@@ -532,7 +538,6 @@ if selected == "MYSQL Database":
             show_videos_table(conn)
         elif show_table == "COMMENTS":
             show_comments_table(conn)
-
         conn.close()
 
 # Function to execute SQL queries and return results as dataframe
@@ -560,11 +565,10 @@ queries = {
     "6 : What is the total number of likes and dislikes for each video, and what are their corresponding video names?": "SELECT Title AS Video_Name, SUM(Likes) AS Total_Likes FROM video_details GROUP BY Title",
     "7 : What is the total number of views for each channel, and what are their corresponding channel names?": "SELECT Channel_Name, SUM(Views) AS Total_Views FROM video_details GROUP BY Channel_Name",
     "8 : What are the names of all the channels that have published videos in the year 2022?": "SELECT DISTINCT Channel_Name FROM video_details WHERE YEAR(Published_Date) = 2022",
-    "9 : What is the average duration of all videos in each channel, and what are their corresponding channel names?": "select channel_name as channelname,AVG(duration) as averageduration from videos group by channel_name;",
-    "10 : Which videos have the highest number of comments, and what are their corresponding channel names?": "SELECT Title AS Video_Name, Channel_Name, COUNT(*) AS Comment_Count FROM video_details v LEFT JOIN comment_details c ON v.Video_Id = c.Video_Id GROUP BY Title ORDER BY Comment_Count DESC LIMIT 10"
-}
+    "9 : What is the average duration of all videos in each channel, and what are their corresponding channel names?": "SELECT Channel_Name AS ChannelName,SEC_TO_TIME(AVG(TIME_TO_SEC(Duration))) AS AverageDuration FROM video_details GROUP BY Channel_Name;",
+    "10 : Which videos have the highest number of comments, and what are their corresponding channel names?": "SELECT v.Title AS Video_Name,v.Channel_Name,COUNT(c.Comment_Id) AS Comment_Count FROM video_details v LEFT JOIN comment_details c ON v.Video_Id = c.Video_Id GROUP BY v.Video_Id, v.Title, v.Channel_Name ORDER BY Comment_Count DESC LIMIT 10;"}
 
-# Streamlit app
+# Analyzing using SQL on menu option
 if selected == 'Analysis using SQL':
     st.subheader(':blue[Analysis using SQL]')
     st.markdown('''You can analyze the collection of YouTube channel data stored in a MySQL database.
@@ -584,21 +588,6 @@ if selected == 'Analysis using SQL':
         
 
 
-# Setting up the option "Analysis using SQL" in streamlit page 
-if selected == 'Analysis using SQL':
-    st.subheader(':blue[Analysis using SQL]')
-    st.markdown('''You can analyze the collection of YouTube channel data stored in a MySQL database.
-                Based on selecting the listed questions below, the output will be displayed in a table format''')
-    Questions = ['Select your Question',
-        '1.What are the names of all the videos and their corresponding channels?',
-        '2.Which channels have the most number of videos, and how many videos do they have?',
-        '3.What are the top 10 most viewed videos and their respective channels?',
-        '4.How many comments were made on each video, and what are their corresponding video names?',
-        '5.Which videos have the highest number of likes, and what are their corresponding channel names?',
-        '6.What is the total number of likes and dislikes for each video, and what are their corresponding video names?',
-        '7.What is the total number of views for each channel, and what are their corresponding channel names?',
-        '8.What are the names of all the channels that have published videos in the year 2022?',
-        '9.What is the average duration of all videos in each channel, and what are their corresponding channel names?',
-        '10.Which videos have the highest number of comments, and what are their corresponding channel names?' ]
+
     
    
