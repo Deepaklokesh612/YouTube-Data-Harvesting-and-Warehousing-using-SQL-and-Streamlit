@@ -1,16 +1,16 @@
-Output Demo Video:
+# Output Demo Video
 
 https://github.com/Deepaklokesh612/YouTube-Data-Harvesting-and-Warehousing-using-SQL-and-Streamlit/assets/126693213/8160d931-8e23-455c-b66b-1295bf23058f
 
-Introduction:
+# Introduction
 
 The project about Building a simple dashboard or UI using Streamlit. The application facilitates the retrieval of various data points such as channel details, video information, playlists, and comments using the YouTube API. It also provides functionality to store this data in a MYSQL database (Warehousing) and query it for analysis the data within the Streamlit.
 
-Skills Takeaway :
+# Skills Takeaway 
 
 Python scripting, Data Collection, Streamlit, API integration, Data Management using SQL.
 
-Approach:
+# Approach
 1. Set up a Streamlit app
 2. Connect to the YouTube API
 3. Store and Clean data
@@ -19,7 +19,7 @@ Approach:
 6. Display data in the Streamlit app
 
 
-Overview :
+# Overview 
 
 Data Harvesting: Utilizing the YouTube API to collect data such as video details, channel information, playlists, and comments.
 
@@ -27,7 +27,7 @@ Data Storage: Setting up a local MySQL database. Creating tables to store the ha
 
 Data Analysis: Developing a Streamlit application to interact with the SQL database. Performing analysis on the stored YouTube data.
 
-Prerequisites:
+# Prerequisites
 
 Before using the application, ensure you have the following prerequisites set up:
 1. Python Environment: Install Python on your system.
@@ -36,7 +36,7 @@ Before using the application, ensure you have the following prerequisites set up
 4. SQL Database: Set up MySQL or PostgreSQL database and configure connection details in the code.
 5. Streamlit: Install Streamlit library for running the application.
 
-Technology and Tools:
+# Technology and Tools
 
 1) Python 3.12.2
 
@@ -46,7 +46,7 @@ Technology and Tools:
 
 4) Streamlit
 
-Required Python Libraries:
+# Required Python Libraries
 
 The following Python libraries are required for the project:
 
